@@ -10,6 +10,7 @@
 package org.mifospay.feature.send.interbank
 
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -49,9 +50,94 @@ class InterbankTransferViewModel(
     },
 ) {
 
+    // Track if we've already processed prefilled data to avoid duplicate lookups
+    private var prefilledDataProcessed = false
+
     init {
         viewModelScope.launch {
             loadFromAccounts()
+        }
+    }
+
+    /**
+     * Handles pre-filled data from QR scan.
+     * Auto-selects first account and looks up recipient by phone number.
+     *
+     * @param phoneNumber Phone number for participant lookup (REQUIRED)
+     * @param recipientName Display hint while looking up participant
+     * @param amount Pre-filled amount from QR code
+     */
+    fun handlePrefilledFromQr(
+        phoneNumber: String,
+        recipientName: String?,
+        amount: String?,
+    ) {
+        if (prefilledDataProcessed) return
+        prefilledDataProcessed = true
+
+        viewModelScope.launch {
+            // Wait for accounts to load
+            mutableStateFlow.first { it.loadingState is InterbankTransferState.LoadingState.Success }
+
+            val accounts = state.fromAccounts
+            if (accounts.isEmpty()) {
+                mutableStateFlow.update {
+                    it.copy(
+                        searchRecipientState = InterbankTransferState.SearchRecipientState.Error(
+                            "No accounts available for transfer",
+                        ),
+                    )
+                }
+                return@launch
+            }
+
+            // Auto-select first account and move to search recipient step
+            val selectedAccount = accounts.first()
+            mutableStateFlow.update {
+                it.copy(
+                    currentStep = InterbankTransferState.Step.SearchRecipient,
+                    selectedFromAccount = selectedAccount,
+                    searchRecipientState = InterbankTransferState.SearchRecipientState.Loading,
+                    // Pre-fill amount if provided
+                    transferAmount = amount?.takeIf { amt -> amt.isNotBlank() } ?: it.transferAmount,
+                )
+            }
+
+            // Auto-lookup participant using phone number
+            val currencyCode = selectedAccount.currency?.code ?: "MXN"
+            val result = interBankRepository.findParticipant(
+                partyId = phoneNumber,
+                currencyCode = currencyCode,
+            )
+
+            when (result) {
+                is DataState.Success -> {
+                    // Participant found: Skip to TransferDetails with pre-filled data
+                    mutableStateFlow.update {
+                        it.copy(
+                            currentStep = InterbankTransferState.Step.TransferDetails,
+                            selectedParticipantInfo = result.data,
+                            searchRecipientState = InterbankTransferState.SearchRecipientState.Success,
+                            searchResults = listOf(result.data),
+                        )
+                    }
+                }
+
+                is DataState.Error -> {
+                    // Lookup failed: Stay on SearchRecipient, show error
+                    mutableStateFlow.update {
+                        it.copy(
+                            searchRecipientState = InterbankTransferState.SearchRecipientState.Error(
+                                result.message ?: "Participant not found",
+                            ),
+                        )
+                    }
+                }
+
+                is DataState.Loading -> {
+                    // Should not happen since findParticipant is a suspend function
+                }
+            }
         }
     }
 

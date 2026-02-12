@@ -17,16 +17,60 @@ import androidx.navigation.toRoute
 import kotlinx.serialization.Serializable
 import org.mifospay.feature.send.interbank.InterbankTransferFlowScreen
 
+/**
+ * Route for inter-bank transfer screen.
+ *
+ * @param returnDestination Where to navigate after transfer success
+ * @param prefilledPhoneNumber Phone number from QR scan for participant lookup
+ * @param prefilledRecipientName Display hint while looking up participant
+ * @param prefilledAmount Pre-filled amount from QR code
+ */
 @Serializable
 data class InterbankTransferRoute(
     val returnDestination: String = "home",
+    val prefilledPhoneNumber: String? = null,
+    val prefilledRecipientName: String? = null,
+    val prefilledAmount: String? = null,
 )
 
+/**
+ * Navigate to inter-bank transfer screen.
+ *
+ * @param returnDestination Where to navigate after transfer success
+ * @param navOptions Navigation options
+ */
 fun NavController.navigateToInterbankTransfer(
     returnDestination: String = "home",
     navOptions: NavOptions? = null,
 ) {
     this.navigate(InterbankTransferRoute(returnDestination = returnDestination), navOptions)
+}
+
+/**
+ * Navigate to inter-bank transfer screen with pre-filled data from QR scan.
+ *
+ * @param phoneNumber Phone number for participant lookup (REQUIRED for QR-initiated transfers)
+ * @param recipientName Display hint while looking up participant
+ * @param amount Pre-filled amount from QR code
+ * @param returnDestination Where to navigate after transfer success
+ * @param navOptions Navigation options
+ */
+fun NavController.navigateToInterbankTransfer(
+    phoneNumber: String,
+    recipientName: String? = null,
+    amount: String? = null,
+    returnDestination: String = "home",
+    navOptions: NavOptions? = null,
+) {
+    this.navigate(
+        InterbankTransferRoute(
+            returnDestination = returnDestination,
+            prefilledPhoneNumber = phoneNumber,
+            prefilledRecipientName = recipientName,
+            prefilledAmount = amount,
+        ),
+        navOptions,
+    )
 }
 
 fun NavGraphBuilder.interbankTransferScreen(
@@ -38,6 +82,9 @@ fun NavGraphBuilder.interbankTransferScreen(
         InterbankTransferFlowScreen(
             onBackClick = onBackClick,
             onTransferSuccess = onTransferSuccess,
+            prefilledPhoneNumber = route.prefilledPhoneNumber,
+            prefilledRecipientName = route.prefilledRecipientName,
+            prefilledAmount = route.prefilledAmount,
         )
     }
 }
